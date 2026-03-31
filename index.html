@@ -3,38 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Step 3: AI Tracking Test - Fatina</title>
+    <title>Toyota AR - For Leo</title>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; }
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
         #three_container { position: absolute; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; }
         
-        #status { 
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
-            background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 20px; 
-            z-index: 100; font-weight: bold; text-align: center; font-size: 14px;
+        /* 溫馨提示面板 */
+        .info-panel {
+            position: fixed; top: 30px; left: 50%; transform: translateX(-50%);
+            z-index: 100; width: 80%; max-width: 300px;
+            background: rgba(255, 255, 255, 0.9); padding: 15px; border-radius: 20px;
+            text-align: center; box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            transition: opacity 0.5s;
         }
+        .title { font-size: 16px; font-weight: bold; margin-bottom: 5px; color: #000; }
+        .subtitle { font-size: 13px; color: #444; }
+        .bold-name { font-weight: 900; text-decoration: underline; }
     </style>
 </head>
 <body>
-    <div id="status">Step 3: Initializing AI...</div>
+    <div class="info-panel" id="gui">
+        <div class="title">Hi Leo, look at your hand!</div>
+        <div class="subtitle">Toyota is here! Love aunty <span class="bold-name">Fatina</span></div>
+    </div>
+
     <video id="webcam" autoplay playsinline></video>
     <div id="three_container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.153.0/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script type="module">
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
-        const status = document.getElementById("status");
         const video = document.getElementById("webcam");
-        let handLandmarker;
-        let lastVideoTime = -1;
-        let cube;
+        const gui = document.getElementById("gui");
+        let handLandmarker, carModel, lastVideoTime = -1;
         let scene, camera3D, renderer;
 
-        // --- 1. 初始化 3D 場景 ---
+        // --- 1. 3D 場景與光照 ---
         function initThreeJS() {
             scene = new THREE.Scene();
             camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -42,73 +51,69 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('three_container').appendChild(renderer.domElement);
 
-            const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
-            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            cube = new THREE.Mesh(geometry, material);
-            cube.visible = false; // 沒偵測到手時先隱藏
-            scene.add(cube);
+            // 加強光照，讓金屬質感的車子更好看
+            scene.add(new THREE.AmbientLight(0xffffff, 2.5)); 
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+            sun.position.set(5, 10, 7);
+            scene.add(sun);
 
             camera3D.position.z = 5;
-            startAI();
+            loadCar();
         }
 
-        // --- 2. 啟動 MediaPipe AI ---
+        // --- 2. 加載 Toyota 小車 ---
+        function loadCar() {
+            const loader = new THREE.GLTFLoader();
+            loader.load('./car.glb', (gltf) => {
+                carModel = gltf.scene;
+                carModel.scale.set(0.4, 0.4, 0.4); // 調整小車大小
+                carModel.visible = false;
+                scene.add(carModel);
+                startAI();
+            }, undefined, (err) => {
+                alert("Model File Error: Make sure car.glb is in the folder.");
+            });
+        }
+
+        // --- 3. 啟動 AI ---
         async function startAI() {
-            try {
-                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-                handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO", numHands: 1
-                });
-                status.innerText = "AI Active! Show your hand";
-                status.style.color = "blue";
-                animate();
-            } catch (err) {
-                status.innerText = "AI Error: " + err.message;
-                status.style.color = "red";
-            }
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO", numHands: 1
+            });
+            animate();
         }
 
-        // --- 3. 攝像頭啟動 ---
         async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "environment" } 
-                });
-                video.srcObject = stream;
-                video.addEventListener("loadeddata", initThreeJS);
-            } catch (err) {
-                status.innerText = "Camera Error: " + err.name;
-                status.style.color = "red";
-            }
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            video.srcObject = stream;
+            video.addEventListener("loadeddata", initThreeJS);
         }
 
-        // --- 4. 偵測與動畫循環 ---
+        // --- 4. 動畫循環 ---
         function animate() {
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 const results = handLandmarker.detectForVideo(video, performance.now());
 
-                if (results.landmarks && results.landmarks.length > 0) {
-                    const palm = results.landmarks[0][9]; // 取得中指根部坐標
+                if (results.landmarks && results.landmarks.length > 0 && carModel) {
+                    const palm = results.landmarks[0][9];
                     
-                    // 座標映射 (將 0~1 轉換為 3D 空間)
-                    cube.position.x = (palm.x - 0.5) * 7;
-                    cube.position.y = -(palm.y - 0.5) * 12;
-                    cube.position.z = -palm.z * 10;
+                    // 座標轉換
+                    carModel.position.x = (palm.x - 0.5) * 8;
+                    carModel.position.y = -(palm.y - 0.5) * 12;
+                    carModel.position.z = -palm.z * 10;
                     
-                    cube.rotation.x += 0.05;
-                    cube.rotation.y += 0.05;
-                    cube.visible = true;
-                    status.innerText = "Hand Detected! ✅";
-                    status.style.color = "green";
-                } else {
-                    cube.visible = false;
-                    status.innerText = "Scanning for hand...";
-                    status.style.color = "orange";
+                    carModel.rotation.y += 0.04; // 讓車子慢慢旋轉
+                    carModel.visible = true;
+                    gui.style.opacity = "0.2"; // 發現手時面板變淡
+                } else if (carModel) {
+                    carModel.visible = false;
+                    gui.style.opacity = "1";
                 }
             }
             renderer.render(scene, camera3D);
