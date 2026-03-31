@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toyota AR - 摄像头测试</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        video { width: 100vw; height: 100vh; object-fit: cover; }
+        .status {
+            position: fixed; top: 10px; left: 10px;
+            color: white; background: rgba(0,0,0,0.5);
+            padding: 5px 10px; font-family: sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div class="status">正在尝试启动后置摄像头...</div>
+    <video id="video" autoplay playsinline></video>
+
+    <script>
+        const video = document.getElementById('video');
+        const status = document.querySelector('.status');
+
+        async function startCamera() {
+            try {
+                // facingMode: "environment" 表示强制调用后置主摄像头
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "environment" },
+                    audio: false
+                });
+                video.srcObject = stream;
+                status.innerText = "后置摄像头已连接";
+            } catch (err) {
+                status.innerText = "错误: " + err.name;
+                console.error("无法访问摄像头: ", err);
+            }
+        }
+
+        // 页面加载后启动
+        startCamera();
+    </script>
+</body>
+</html>
