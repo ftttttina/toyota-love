@@ -3,88 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - Hand Tracking Fix</title>
+    <title>Toyota AR - Hand Tracking V3</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
-        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: scaleX(1); }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
         #output_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; }
-        .info-panel {
+        .console {
             position: fixed; top: 10px; left: 10px; z-index: 10;
             color: #00ff00; background: rgba(0,0,0,0.8);
-            padding: 10px; border-radius: 4px; font-size: 12px; max-width: 80%;
+            padding: 12px; border-radius: 8px; font-size: 11px;
+            border: 1px solid #333; pointer-events: none;
         }
     </style>
 </head>
 <body>
-    <div class="info-panel" id="status">System: Loading MediaPipe...</div>
+    <div class="console" id="log">System: Initializing...</div>
     <video id="webcam" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424515/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4.1637441118/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
 
-    <script>
-        const videoElement = document.getElementById('webcam');
-        const canvasElement = document.getElementById('output_canvas');
-        const canvasCtx = canvasElement.getContext('2d');
-        const statusDiv = document.getElementById('status');
+    <script type="module">
+        import { HandLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
-        function updateStatus(msg) {
-            statusDiv.innerText = "System: " + msg;
+        const logElement = document.getElementById("log");
+        const video = document.getElementById("webcam");
+        const canvasElement = document.getElementById("output_canvas");
+        const canvasCtx = canvasElement.getContext("2d");
+        
+        let handLandmarker = undefined;
+        let lastVideoTime = -1;
+
+        function updateLog(msg) {
+            logElement.innerText = `Status: ${msg}`;
             console.log(msg);
         }
 
-        // 自动适配屏幕比例
-        function onResize() {
-            canvasElement.width = window.innerWidth;
-            canvasElement.height = window.innerHeight;
+        // 1. 初始化检测器
+        async function createHandLandmarker() {
+            updateLog("Loading AI Models...");
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+            );
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numHands: 1
+            });
+            updateLog("Models Loaded. Starting Camera...");
+            startCamera();
         }
-        window.addEventListener('resize', onResize);
-        onResize();
 
-        function onResults(results) {
-            canvasCtx.save();
-            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-            
-            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                updateStatus("Hand Detected!");
-                for (const landmarks of results.multiHandLandmarks) {
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
-                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 3});
+        // 2. 启动摄像头
+        function startCamera() {
+            const constraints = {
+                video: { facingMode: "environment" }
+            };
+            navigator.mediaDevices.getUserMedia(constraints)
+                .then((stream) => {
+                    video.srcObject = stream;
+                    video.addEventListener("loadeddata", predictWebcam);
+                    updateLog("Camera Active. Scan your hand.");
+                })
+                .catch((err) => {
+                    updateLog(`Camera Error: ${err.name}`);
+                });
+        }
+
+        // 3. 循环预测与绘图
+        async function predictWebcam() {
+            canvasElement.width = video.videoWidth;
+            canvasElement.height = video.videoHeight;
+
+            if (lastVideoTime !== video.currentTime) {
+                lastVideoTime = video.currentTime;
+                const results = handLandmarker.detectForVideo(video, performance.now());
+
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                const drawingUtils = new DrawingUtils(canvasCtx);
+
+                if (results.landmarks) {
+                    for (const landmarks of results.landmarks) {
+                        updateLog("Hand Tracking Active");
+                        drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: "#00FF00", lineWidth: 5 });
+                        drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", lineWidth: 2 });
+                    }
                 }
-            } else {
-                updateStatus("Searching for hand...");
             }
-            canvasCtx.restore();
+            window.requestAnimationFrame(predictWebcam);
         }
 
-        const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424515/${file}`
-        });
-
-        hands.setOptions({
-            maxNumHands: 1,
-            modelComplexity: 0, // 降低复杂度以提升手机运行速度
-            minDetectionConfidence: 0.5,
-            minTrackingConfidence: 0.5
-        });
-
-        hands.onResults(onResults);
-
-        const camera = new Camera(videoElement, {
-            onFrame: async () => {
-                await hands.send({image: videoElement});
-            },
-            width: 640,  // 降低检测分辨率提升识别率
-            height: 480
-        });
-
-        // 尝试启动摄像头
-        camera.start()
-            .then(() => updateStatus("Camera active. Show your hand!"))
-            .catch(err => updateStatus("Error: " + err));
-
+        createHandLandmarker();
     </script>
 </body>
 </html>
