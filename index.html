@@ -1,44 +1,92 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - 摄像头测试</title>
+    <title>Toyota AR - Hand Tracking</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; }
-        video { width: 100vw; height: 100vh; object-fit: cover; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        /* 摄像头层 */
+        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
+        /* 绘图层（画出手指线条） */
+        #output_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; }
         .status {
-            position: fixed; top: 10px; left: 10px;
-            color: white; background: rgba(0,0,0,0.5);
-            padding: 5px 10px; font-family: sans-serif;
+            position: fixed; top: 20px; left: 20px; z-index: 3;
+            color: #00ff00; background: rgba(0,0,0,0.7);
+            padding: 8px 15px; border-radius: 5px; font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div class="status">正在尝试启动后置摄像头...</div>
-    <video id="video" autoplay playsinline></video>
+    <div class="status">System: Initializing Camera...</div>
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="output_canvas"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 
     <script>
-        const video = document.getElementById('video');
-        const status = document.querySelector('.status');
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusDiv = document.querySelector('.status');
 
-        async function startCamera() {
-            try {
-                // facingMode: "environment" 表示强制调用后置主摄像头
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment" },
-                    audio: false
-                });
-                video.srcObject = stream;
-                status.innerText = "后置摄像头已连接";
-            } catch (err) {
-                status.innerText = "错误: " + err.name;
-                console.error("无法访问摄像头: ", err);
+        // 设置 Canvas 分辨率与窗口一致
+        function resizeCanvas() {
+            canvasElement.width = window.innerWidth;
+            canvasElement.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        function onResults(results) {
+            // 清除上一帧的笔迹
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusDiv.innerText = "Status: Hand Detected";
+                statusDiv.style.color = "#00ff00";
+
+                for (const landmarks of results.multiHandLandmarks) {
+                    // 画出连接线
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
+                    // 画出关键点
+                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+                }
+            } else {
+                statusDiv.innerText = "Status: Searching for Hand...";
+                statusDiv.style.color = "#ffffff";
             }
+            canvasCtx.restore();
         }
 
-        // 页面加载后启动
-        startCamera();
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,            // 只追踪一只手，节省手机性能
+            modelComplexity: 1,        // 0为快速，1为平衡
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        hands.onResults(onResults);
+
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({image: videoElement});
+            },
+            width: 1280,
+            height: 720,
+            facingMode: "environment" // 依然强制使用后置摄像头
+        });
+
+        camera.start().then(() => {
+            statusDiv.innerText = "Status: Camera Ready - Show your hand";
+        });
     </script>
 </body>
 </html>
