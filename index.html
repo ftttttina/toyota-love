@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - Leo's Special</title>
+    <title>Toyota AR - Leo's Success</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
@@ -12,25 +12,23 @@
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
             background: rgba(255,255,255,0.9); padding: 12px 25px; border-radius: 30px; 
             z-index: 100; font-weight: bold; font-size: 14px; text-align: center;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3); min-width: 220px;
         }
     </style>
 </head>
 <body>
-    <div id="status">Fetching Leo's Toyota...</div>
+    <div id="status">Hi Leo! Fatina is ready...</div>
     <video id="webcam" autoplay playsinline></video>
     <div id="three_container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.153.0/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script type="module">
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
         const status = document.getElementById("status");
         const video = document.getElementById("webcam");
-        let handLandmarker, carModel, lastVideoTime = -1;
+        let handLandmarker, carGroup, lastVideoTime = -1;
         let scene, camera3D, renderer;
 
         function initThreeJS() {
@@ -40,54 +38,64 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('three_container').appendChild(renderer.domElement);
 
-            // 環境光與強光，確保模型色彩鮮豔
             scene.add(new THREE.AmbientLight(0xffffff, 2.5));
             const sun = new THREE.DirectionalLight(0xffffff, 1.5);
             sun.position.set(5, 10, 7);
             scene.add(sun);
 
             camera3D.position.z = 5;
-            loadPolyModel();
+            createCoolCar(); 
+            startAI();
         }
 
-        function loadPolyModel() {
-            const loader = new THREE.GLTFLoader();
-            // 這是 Poly Pizza 該模型的直連 GLB 網址
-            const modelUrl = 'https://poly.pizza/m/ZEFWmOPSgh/model.glb';
+        // 現場「拼裝」一台精緻 Toyota Style 小車
+        function createCoolCar() {
+            carGroup = new THREE.Group();
 
-            loader.load(modelUrl, (gltf) => {
-                carModel = gltf.scene;
-                
-                // 自動放縮與居中
-                const box = new THREE.Box3().setFromObject(carModel);
-                const size = box.getSize(new THREE.Vector3()).length();
-                const center = box.getCenter(new THREE.Vector3());
-                
-                // 調整至手掌大小 (約 3.5 單位)
-                const scaleFactor = 3.5 / size;
-                carModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
-                
-                // 修正中心偏移
-                carModel.position.x += (carModel.position.x - center.x);
-                carModel.position.y += (carModel.position.y - center.y);
-                carModel.position.z += (carModel.position.z - center.z);
+            // 車身
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(1.2, 0.4, 2.4),
+                new THREE.MeshStandardMaterial({ color: 0xd00000, metalness: 0.7, roughness: 0.2 })
+            );
+            body.position.y = 0.35;
+            carGroup.add(body);
 
-                carModel.visible = false;
-                scene.add(carModel);
-                
-                status.innerText = "Toyota Ready! Show hand Leo!";
-                startAI();
-            }, 
-            (xhr) => {
-                if (xhr.lengthComputable) {
-                    const percent = Math.round(xhr.loaded / xhr.total * 100);
-                    status.innerText = `Downloading Toyota: ${percent}%`;
-                }
-            },
-            (err) => {
-                console.error(err);
-                status.innerText = "Load Error. Try refreshing!";
+            // 車頂
+            const roof = new THREE.Mesh(
+                new THREE.BoxGeometry(1.0, 0.5, 1.2),
+                new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.9 })
+            );
+            roof.position.set(0, 0.75, -0.2);
+            carGroup.add(roof);
+
+            // 輪胎與銀色輪轂
+            const wheelGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.3, 32);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+            const hubMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 1 });
+            
+            const wheelPos = [{x:0.6, z:0.8}, {x:-0.6, z:0.8}, {x:0.6, z:-0.8}, {x:-0.6, z:-0.8}];
+            wheelPos.forEach(p => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.rotation.z = Math.PI / 2;
+                w.position.set(p.x, 0.25, p.z);
+                const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.32, 16), hubMat);
+                hub.rotation.z = Math.PI / 2;
+                hub.position.set(p.x, 0.25, p.z);
+                carGroup.add(w); carGroup.add(hub);
             });
+
+            // 亮黃色車燈
+            const lightGeo = new THREE.PlaneGeometry(0.3, 0.15);
+            const lightMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const l1 = new THREE.Mesh(lightGeo, lightMat);
+            l1.position.set(0.4, 0.45, 1.21);
+            carGroup.add(l1);
+            const l2 = l1.clone();
+            l2.position.set(-0.4, 0.45, 1.21);
+            carGroup.add(l2);
+
+            carGroup.visible = false;
+            scene.add(carGroup);
         }
 
         async function startAI() {
@@ -99,30 +107,28 @@
                 },
                 runningMode: "VIDEO", numHands: 1
             });
+            status.innerText = "Ready! Show your hand Leo!";
             animate();
         }
 
         async function startCamera() {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                video.srcObject = stream;
-                video.addEventListener("loadeddata", initThreeJS);
-            } catch (err) {
-                status.innerText = "Camera Denied";
-            }
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            video.srcObject = stream;
+            video.addEventListener("loadeddata", initThreeJS);
         }
 
         function animate() {
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 const results = handLandmarker.detectForVideo(video, performance.now());
-                if (results.landmarks && results.landmarks.length > 0 && carModel) {
-                    const palm = results.landmarks[0][9]; // 取得中指根部
-                    carModel.position.set((palm.x - 0.5) * 8, -(palm.y - 0.5) * 12, -palm.z * 10);
-                    carModel.rotation.y += 0.04; // 緩慢旋轉展示
-                    carModel.visible = true;
-                } else if (carModel) {
-                    carModel.visible = false;
+                if (results.landmarks && results.landmarks.length > 0 && carGroup) {
+                    const palm = results.landmarks[0][9];
+                    carGroup.position.set((palm.x - 0.5) * 8, -(palm.y - 0.5) * 12, -palm.z * 10);
+                    carGroup.rotation.y += 0.05;
+                    carGroup.visible = true;
+                    status.innerText = "🚗 Toyota in Leo's hand!";
+                } else if (carGroup) {
+                    carGroup.visible = false;
                 }
             }
             renderer.render(scene, camera3D);
