@@ -16,7 +16,7 @@
     </style>
 </head>
 <body>
-    <div id="status">Loading Toyota...</div>
+    <div id="status">Connecting to Toyota...</div>
     <video id="webcam" autoplay playsinline></video>
     <div id="three_container"></div>
 
@@ -32,59 +32,73 @@
         let handLandmarker, carModel, lastVideoTime = -1;
         let scene, camera3D, renderer;
 
-        // 1. 初始化 3D
         function initThreeJS() {
             scene = new THREE.Scene();
             camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('three_container').appendChild(renderer.domElement);
-
-            // 超強光照組合
             scene.add(new THREE.AmbientLight(0xffffff, 3.0)); 
-            const pointLight = new THREE.PointLight(0xffffff, 2);
-            pointLight.position.set(0, 5, 5);
-            scene.add(pointLight);
-
             camera3D.position.z = 5;
             loadModel();
         }
 
-        // 2. 加載模型與自動修正
         function loadModel() {
             const loader = new THREE.GLTFLoader();
+            // 設定超時機制：5秒後如果還沒載入，就先用方塊
+            const timeout = setTimeout(() => {
+                if (!carModel) {
+                    status.innerText = "Model taking too long, using Test Cube...";
+                    useFallbackCube();
+                }
+            }, 5000);
+
             loader.load('./car.glb', (gltf) => {
+                clearTimeout(timeout);
                 carModel = gltf.scene;
-                
-                // --- 核心修正：強制居中與放大 ---
+                // 自動居中並調整大小
                 const box = new THREE.Box3().setFromObject(carModel);
-                const center = box.getCenter(new THREE.Vector3());
-                carModel.position.x += (carModel.position.x - center.x);
-                carModel.position.y += (carModel.position.y - center.y);
-                carModel.position.z += (carModel.position.z - center.z);
-                
-                carModel.scale.set(2, 2, 2); // 放大 2 倍
+                carModel.scale.set(1, 1, 1); 
                 carModel.visible = false;
                 scene.add(carModel);
-                
                 status.innerText = "Toyota Ready! Show Hand";
                 startAI();
-            }, undefined, (err) => {
-                status.innerText = "File Error: " + err.message;
+            }, 
+            (xhr) => {
+                // 顯示載入進度
+                if (xhr.lengthComputable) {
+                    const percentComplete = Math.round(xhr.loaded / xhr.total * 100);
+                    status.innerText = `Loading Toyota: ${percentComplete}%`;
+                }
+            },
+            (err) => {
+                clearTimeout(timeout);
+                status.innerText = "Car.glb error, using Cube";
+                useFallbackCube();
             });
         }
 
-        // 3. 啟動 AI
+        function useFallbackCube() {
+            const geo = new THREE.BoxGeometry(0.8, 0.5, 1.5);
+            const mat = new THREE.MeshStandardMaterial({ color: 0x0077ff, metalness: 0.8, roughness: 0.2 });
+            carModel = new THREE.Mesh(geo, mat);
+            carModel.visible = false;
+            scene.add(carModel);
+            startAI();
+        }
+
         async function startAI() {
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-            handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU"
-                },
-                runningMode: "VIDEO", numHands: 1
-            });
-            animate();
+            try {
+                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+                handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO", numHands: 1
+                });
+                animate();
+            } catch (e) { status.innerText = "AI Init Error"; }
         }
 
         async function startCamera() {
@@ -97,23 +111,19 @@
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 const results = handLandmarker.detectForVideo(video, performance.now());
-
                 if (results.landmarks && results.landmarks.length > 0 && carModel) {
                     const palm = results.landmarks[0][9];
-                    // 坐標映射
                     carModel.position.set((palm.x - 0.5) * 8, -(palm.y - 0.5) * 12, -palm.z * 10);
                     carModel.rotation.y += 0.05;
                     carModel.visible = true;
                     status.innerText = "Hi Leo! 🚗";
                 } else if (carModel) {
                     carModel.visible = false;
-                    status.innerText = "Searching for hand...";
                 }
             }
             renderer.render(scene, camera3D);
             window.requestAnimationFrame(animate);
         }
-
         window.addEventListener('load', startCamera);
     </script>
 </body>
