@@ -3,77 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - Hand Tracking V3</title>
+    <title>Toyota AR - 3D Cube Test</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
         #output_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; }
+        #three_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
         .console {
             position: fixed; top: 10px; left: 10px; z-index: 10;
             color: #00ff00; background: rgba(0,0,0,0.8);
-            padding: 12px; border-radius: 8px; font-size: 11px;
-            border: 1px solid #333; pointer-events: none;
+            padding: 8px; border-radius: 5px; font-size: 11px;
         }
     </style>
 </head>
 <body>
-    <div class="console" id="log">System: Initializing...</div>
+    <div class="console" id="log">System: Initializing 3D Engine...</div>
     <video id="webcam" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
+    <div id="three_container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.153.0/three.min.js"></script>
 
     <script type="module">
-        import { HandLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
         const logElement = document.getElementById("log");
         const video = document.getElementById("webcam");
         const canvasElement = document.getElementById("output_canvas");
         const canvasCtx = canvasElement.getContext("2d");
         
-        let handLandmarker = undefined;
+        let handLandmarker;
         let lastVideoTime = -1;
 
-        function updateLog(msg) {
-            logElement.innerText = `Status: ${msg}`;
-            console.log(msg);
-        }
+        // --- THREE.JS 初始化 ---
+        const scene = new THREE.Scene();
+        const camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ alpha: true }); // alpha: true 实现背景透明
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('three_container').appendChild(renderer.domElement);
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.zIndex = '3';
 
-        // 1. 初始化检测器
-        async function createHandLandmarker() {
-            updateLog("Loading AI Models...");
-            const vision = await FilesetResolver.forVisionTasks(
-                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-            );
+        // 创建一个红色的 3D 立方体
+        const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+        const material = new THREE.MeshBasicMaterial({ color: 0xff0000, wireframe: false });
+        const cube = new THREE.Mesh(geometry, material);
+        cube.visible = false; // 初始隐藏
+        scene.add(cube);
+
+        camera3D.position.z = 2;
+
+        function updateLog(msg) { logElement.innerText = `Status: ${msg}`; }
+
+        async function init() {
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
             handLandmarker = await HandLandmarker.createFromOptions(vision, {
                 baseOptions: {
                     modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
                     delegate: "GPU"
                 },
-                runningMode: "VIDEO",
-                numHands: 1
+                runningMode: "VIDEO", numHands: 1
             });
-            updateLog("Models Loaded. Starting Camera...");
             startCamera();
         }
 
-        // 2. 启动摄像头
         function startCamera() {
-            const constraints = {
-                video: { facingMode: "environment" }
-            };
-            navigator.mediaDevices.getUserMedia(constraints)
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
                 .then((stream) => {
                     video.srcObject = stream;
                     video.addEventListener("loadeddata", predictWebcam);
-                    updateLog("Camera Active. Scan your hand.");
-                })
-                .catch((err) => {
-                    updateLog(`Camera Error: ${err.name}`);
+                    updateLog("3D Engine Ready. Show Hand.");
                 });
         }
 
-        // 3. 循环预测与绘图
         async function predictWebcam() {
             canvasElement.width = video.videoWidth;
             canvasElement.height = video.videoHeight;
@@ -82,21 +86,30 @@
                 lastVideoTime = video.currentTime;
                 const results = handLandmarker.detectForVideo(video, performance.now());
 
-                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-                const drawingUtils = new DrawingUtils(canvasCtx);
+                if (results.landmarks && results.landmarks.length > 0) {
+                    const hand = results.landmarks[0];
+                    // 关键点 9 是中指根部，我们把它作为手心
+                    const palm = hand[9]; 
 
-                if (results.landmarks) {
-                    for (const landmarks of results.landmarks) {
-                        updateLog("Hand Tracking Active");
-                        drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, { color: "#00FF00", lineWidth: 5 });
-                        drawingUtils.drawLandmarks(landmarks, { color: "#FF0000", lineWidth: 2 });
-                    }
+                    // 将 MediaPipe 的 0~1 坐标转换为 Three.js 的 3D 坐标
+                    // 这里的数学转换是为了让 3D 物体对齐屏幕上的手
+                    cube.position.x = (palm.x - 0.5) * 3; 
+                    cube.position.y = -(palm.y - 0.5) * 5; 
+                    cube.position.z = -palm.z * 10; // z 轴代表深度
+
+                    cube.rotation.y += 0.05; // 让立方体自转
+                    cube.visible = true;
+                    updateLog("Object Anchored to Hand");
+                } else {
+                    cube.visible = false;
+                    updateLog("Searching for Hand...");
                 }
             }
+            renderer.render(scene, camera3D);
             window.requestAnimationFrame(predictWebcam);
         }
 
-        createHandLandmarker();
+        init();
     </script>
 </body>
 </html>
