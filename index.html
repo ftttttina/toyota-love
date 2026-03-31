@@ -1,109 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - For Leo</title>
-    <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
-        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
-        #three_container { position: absolute; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
-
-        /* 白色簡約 UI 面板 - 修復重疊問題 */
-        .info-panel {
-            position: fixed; 
-            top: 50%; 
-            left: 50%; 
-            transform: translate(-50%, -50%);
-            z-index: 10; 
-            width: 85%; 
-            max-width: 320px;
-            background: rgba(255, 255, 255, 0.98);
-            border-radius: 24px; 
-            padding: 30px 20px; /* 增加上下內距 */
-            text-align: center;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
-            color: #000;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            transition: opacity 0.5s ease;
-        }
-
-        .title { font-size: 19px; font-weight: 700; margin-bottom: 12px; line-height: 1.2; }
-        .subtitle { font-size: 15px; margin-bottom: 25px; line-height: 1.6; color: #555; }
-        .bold-name { font-weight: 900; color: #000; text-decoration: underline; }
-
-        /* 啟動按鈕 - 增加間距與尺寸 */
-        #start-btn {
-            background: #000; 
-            color: #fff; 
-            border: none;
-            padding: 14px 40px; 
-            border-radius: 40px;
-            font-weight: 700; 
-            cursor: pointer; 
-            font-size: 16px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            transition: transform 0.2s;
-        }
-        #start-btn:active { transform: scale(0.95); }
-
-        #log { font-size: 11px; margin-top: 20px; color: #999; text-transform: uppercase; letter-spacing: 1px; }
-    </style>
-</head>
-<body>
-    <video id="webcam" autoplay playsinline></video>
-    <div id="three_container"></div>
-
-    <div class="info-panel" id="gui-panel">
-        <div class="title">Hi Leo, this is the Toyota Car</div>
-        <div class="subtitle">Open your hand with camera<br>Love aunty <span class="bold-name">Fatina</span></div>
-        <button id="start-btn">Start Experience</button>
-        <div id="log">Ready to Load AI</div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.153.0/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/loaders/GLTFLoader.js"></script>
-
-    <script type="module">
-        // 此處的 JavaScript 代碼與上一個版本相同
-        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
-
-        const logElement = document.getElementById("log");
-        const startBtn = document.getElementById("start-btn");
-        const guiPanel = document.getElementById("gui-panel");
-        const video = document.getElementById("webcam");
-        
-        let handLandmarker;
-        let lastVideoTime = -1;
-        let carModel;
-        let isStarted = false;
-
-        const scene = new THREE.Scene();
-        const camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        document.getElementById('three_container').appendChild(renderer.domElement);
-        scene.add(new THREE.AmbientLight(0xffffff, 2.5)); 
-        camera3D.position.z = 5;
-
-        const loader = new THREE.GLTFLoader();
-        loader.load('car.glb', (gltf) => {
-            carModel = gltf.scene;
-            carModel.scale.set(0.4, 0.4, 0.4); 
-            carModel.visible = false;
-            scene.add(carModel);
-            logElement.innerText = "Model Loaded";
-        }, undefined, (err) => {
-            logElement.innerText = "Upload car.glb to GitHub";
-        });
-
-        startBtn.addEventListener('click', async () => {
+startBtn.addEventListener('click', async () => {
             if (isStarted) return;
+            alert("Starting AI initialization..."); // 增加彈窗測試
             logElement.innerText = "Loading AI...";
-            startBtn.style.visibility = "hidden"; 
 
             try {
                 const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
@@ -115,40 +13,16 @@
                     runningMode: "VIDEO", numHands: 1
                 });
                 
+                // 請求攝像頭
                 const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 video.srcObject = stream;
                 video.addEventListener("loadeddata", predictWebcam);
                 
                 isStarted = true;
-                guiPanel.style.opacity = "0.8";
+                startBtn.style.display = "none";
                 logElement.innerText = "Show your hand!";
             } catch (err) {
+                alert("Critical Error: " + err.name + " - " + err.message); // 強制顯示錯誤原因
                 logElement.innerText = "Error: " + err.message;
-                startBtn.style.visibility = "visible";
             }
         });
-
-        async function predictWebcam() {
-            if (lastVideoTime !== video.currentTime) {
-                lastVideoTime = video.currentTime;
-                const results = handLandmarker.detectForVideo(video, performance.now());
-
-                if (results.landmarks && results.landmarks.length > 0 && carModel) {
-                    const palm = results.landmarks[9];
-                    carModel.position.x = (palm.x - 0.5) * 7;
-                    carModel.position.y = -(palm.y - 0.5) * 12;
-                    carModel.position.z = -palm.z * 8;
-                    carModel.rotation.y += 0.04;
-                    carModel.visible = true;
-                    guiPanel.style.opacity = "0"; 
-                } else if (carModel) {
-                    carModel.visible = false;
-                    if(isStarted) guiPanel.style.opacity = "0.8";
-                }
-            }
-            renderer.render(scene, camera3D);
-            window.requestAnimationFrame(predictWebcam);
-        }
-    </script>
-</body>
-</html>
