@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - Cloud Version</title>
+    <title>Toyota AR for Leo - Final</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
@@ -12,26 +12,28 @@
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
             background: rgba(255,255,255,0.9); padding: 12px 25px; border-radius: 30px; 
             z-index: 100; font-weight: bold; font-size: 14px; text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); min-width: 220px;
         }
+        .fatina { color: #ff4757; text-decoration: underline; }
     </style>
 </head>
 <body>
-    <div id="status">Connecting to Cloud Car...</div>
+    <div id="status">Hi Leo! Starting AR...</div>
     <video id="webcam" autoplay playsinline></video>
     <div id="three_container"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.153.0/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/loaders/GLTFLoader.js"></script>
 
     <script type="module">
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
         const status = document.getElementById("status");
         const video = document.getElementById("webcam");
-        let handLandmarker, carModel, lastVideoTime = -1;
+        let handLandmarker, carGroup, lastVideoTime = -1;
         let scene, camera3D, renderer;
 
+        // 1. 初始化 3D 環境
         function initThreeJS() {
             scene = new THREE.Scene();
             camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -39,57 +41,115 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.getElementById('three_container').appendChild(renderer.domElement);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 3.0));
+            // 設置光照
+            scene.add(new THREE.AmbientLight(0xffffff, 2.0));
+            const sun = new THREE.DirectionalLight(0xffffff, 1.5);
+            sun.position.set(5, 10, 7);
+            scene.add(sun);
+
             camera3D.position.z = 5;
             
-            // 直接引用外部已經部署好的模型網址（這是一個範例小車）
-            const loader = new THREE.GLTFLoader();
-            const cloudModelUrl = 'https://raw.githubusercontent.com/mrdoob/three.js/master/examples/models/gltf/SheenChair.glb'; 
-            // 註：如果想要特定的 Toyota，我們得確保有一個穩定的 HTTPS 直連網址。
-            // 先用這個測試「雲端加載」是否能跑通
-            
-            loader.load(cloudModelUrl, (gltf) => {
-                carModel = gltf.scene;
-                carModel.scale.set(2, 2, 2); 
-                carModel.visible = false;
-                scene.add(carModel);
-                startAI();
-            });
+            buildLeoCar(); // 直接代碼生成小車
+            startAI();
         }
 
-        async function startAI() {
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-            handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                baseOptions: { 
-                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                    delegate: "GPU" 
-                },
-                runningMode: "VIDEO", numHands: 1
+        // 2. 現場拼裝一台小車 (不需要任何外部檔案)
+        function buildLeoCar() {
+            carGroup = new THREE.Group();
+
+            // 車身 (紅色 Toyota Style)
+            const body = new THREE.Mesh(
+                new THREE.BoxGeometry(1.2, 0.5, 2.2),
+                new THREE.MeshStandardMaterial({ color: 0xe63946, metalness: 0.6, roughness: 0.2 })
+            );
+            body.position.y = 0.3;
+            carGroup.add(body);
+
+            // 車頂/擋風玻璃
+            const roof = new THREE.Mesh(
+                new THREE.BoxGeometry(1.0, 0.5, 1.2),
+                new THREE.MeshStandardMaterial({ color: 0x1d3557, transparent: true, opacity: 0.8 })
+            );
+            roof.position.set(0, 0.75, -0.1);
+            carGroup.add(roof);
+
+            // 四個輪子
+            const wheelGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.3, 24);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+            const wheelPositions = [
+                {x: 0.6, z: 0.7}, {x: -0.6, z: 0.7}, 
+                {x: 0.6, z: -0.7}, {x: -0.6, z: -0.7}
+            ];
+            wheelPositions.forEach(p => {
+                const w = new THREE.Mesh(wheelGeo, wheelMat);
+                w.rotation.z = Math.PI / 2;
+                w.position.set(p.x, 0.2, p.z);
+                carGroup.add(w);
             });
-            status.innerText = "Cloud Car Ready! Show hand Leo!";
-            animate();
+
+            // 車燈
+            const lightGeo = new THREE.CircleGeometry(0.12, 16);
+            const lightMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+            const l1 = new THREE.Mesh(lightGeo, lightMat);
+            l1.position.set(0.4, 0.35, 1.11);
+            carGroup.add(l1);
+            const l2 = l1.clone();
+            l2.position.set(-0.4, 0.35, 1.11);
+            carGroup.add(l2);
+
+            carGroup.visible = false;
+            scene.add(carGroup);
+        }
+
+        // 3. 啟動 AI
+        async function startAI() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+                handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: { 
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                        delegate: "GPU" 
+                    },
+                    runningMode: "VIDEO", numHands: 1
+                });
+                status.innerHTML = `Ready! Show hand to <span class="fatina">Fatina</span>`;
+                animate();
+            } catch (e) {
+                status.innerText = "AI System Error";
+            }
         }
 
         async function startCamera() {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            video.srcObject = stream;
-            video.addEventListener("loadeddata", initThreeJS);
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                video.srcObject = stream;
+                video.addEventListener("loadeddata", initThreeJS);
+            } catch (err) {
+                status.innerText = "Camera Denied";
+            }
         }
 
+        // 4. 動畫循環
         function animate() {
             if (lastVideoTime !== video.currentTime) {
                 lastVideoTime = video.currentTime;
                 const results = handLandmarker.detectForVideo(video, performance.now());
-                if (results.landmarks && results.landmarks.length > 0 && carModel) {
+                if (results.landmarks && results.landmarks.length > 0 && carGroup) {
                     const palm = results.landmarks[0][9];
-                    carModel.position.set((palm.x - 0.5) * 8, -(palm.y - 0.5) * 12, -palm.z * 10);
-                    carModel.rotation.y += 0.05;
-                    carModel.visible = true;
-                } else if (carModel) { carModel.visible = false; }
+                    // 坐標同步
+                    carGroup.position.set((palm.x - 0.5) * 8, -(palm.y - 0.5) * 12, -palm.z * 10);
+                    carGroup.rotation.y += 0.04; // 緩慢旋轉
+                    carGroup.visible = true;
+                    status.innerText = "Look! Toyota on your hand! 🚗";
+                } else if (carGroup) {
+                    carGroup.visible = false;
+                    status.innerText = "Finding Leo's hand...";
+                }
             }
             renderer.render(scene, camera3D);
             window.requestAnimationFrame(animate);
         }
+
         window.addEventListener('load', startCamera);
     </script>
 </body>
