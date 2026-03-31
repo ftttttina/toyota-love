@@ -5,50 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Toyota AR - For Leo</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Arial, sans-serif; }
+        body { margin: 0; overflow: hidden; background: #f0f0f0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* 摄像头底层 */
+        /* 攝像頭底層 */
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
 
-        /* 毛玻璃质感的 UI 面板 */
-        .glass-panel {
+        /* 白色簡約風 UI 面板 */
+        .info-panel {
             position: fixed;
-            top: 20px;
-            left: 50%;
-            transform: translateX(-50%);
+            top: 50%; /* 垂直居中 */
+            left: 50%; /* 水平居中 */
+            transform: translate(-50%, -50%); /* 精確居中 */
             z-index: 10;
-            width: 85%;
-            max-width: 400px;
+            width: 80%;
+            max-width: 350px;
             
-            /* 毛玻璃核心代码 */
-            background: rgba(255, 255, 255, 0.1); /* 半透明白色背景 */
-            backdrop-filter: blur(15px);         /* 模糊背景 */
-            -webkit-backdrop-filter: blur(15px);
+            /* 白色背景，黑色文字 */
+            background: rgba(255, 255, 255, 0.85); /* 半透明白色 */
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            border-radius: 20px;
+            padding: 25px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* 柔和陰影 */
             
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 15px;
-            padding: 20px;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-            
-            color: #ffffff; /* 纯白文字 */
+            color: #333333; /* 深灰色文字，比純黑更柔和 */
             text-align: center;
+            backdrop-filter: blur(5px); /* 輕微模糊背景 */
+            -webkit-backdrop-filter: blur(5px);
         }
 
-        .title { font-size: 18px; font-weight: bold; margin-bottom: 8px; }
-        .subtitle { font-size: 14px; opacity: 0.9; margin-bottom: 12px; line-height: 1.4; }
-        .status-dot {
-            display: inline-block; width: 8px; height: 8px; 
-            border-radius: 50%; background: #ff4d4d; margin-right: 5px;
+        .title { font-size: 20px; font-weight: bold; margin-bottom: 10px; color: #000; }
+        .subtitle { font-size: 15px; opacity: 0.9; margin-bottom: 15px; line-height: 1.5; }
+        
+        /* Fatina 加粗 */
+        .bold-name { font-weight: 800; color: #000; }
+
+        .status-container {
+            display: flex; align-items: center; justify-content: center;
+            background: rgba(0, 0, 0, 0.05); padding: 8px 12px; border-radius: 30px;
         }
-        .status-text { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .status-dot {
+            display: inline-block; width: 10px; height: 10px; 
+            border-radius: 50%; background: #ff4d4d; margin-right: 8px;
+            box-shadow: 0 0 5px rgba(255, 77, 77, 0.5);
+        }
+        .status-text { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
 
         #three_container { position: absolute; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
     </style>
 </head>
 <body>
-    <div class="glass-panel">
+    <div class="info-panel" id="gui-panel">
         <div class="title">Hi Leo, this is the Toyota Car</div>
-        <div class="subtitle">Open your hand with camera<br>Love aunty Fatina</div>
+        <div class="subtitle">Open your hand with camera<br>Love aunty <span class="bold-name">Fatina</span></div>
         <div class="status-container">
             <span class="status-dot" id="dot"></span>
             <span class="status-text" id="log">Initializing System...</span>
@@ -67,6 +75,7 @@
 
         const logElement = document.getElementById("log");
         const dotElement = document.getElementById("dot");
+        const guiPanel = document.getElementById("gui-panel");
         const video = document.getElementById("webcam");
         let handLandmarker;
         let lastVideoTime = -1;
@@ -78,20 +87,28 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('three_container').appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+        scene.add(new THREE.AmbientLight(0xffffff, 1.5)); // 建築師光影：增加環境光
         const dirLight = new THREE.DirectionalLight(0xffffff, 1);
         dirLight.position.set(5, 5, 5);
         scene.add(dirLight);
 
-        function updateUI(msg, color) {
+        function updateUI(msg, color, hidePanel = false) {
             logElement.innerText = msg;
             dotElement.style.background = color;
+            dotElement.style.boxShadow = `0 0 5px ${color}`;
+            
+            // 當小車出現時，可以選擇隱藏提示面板
+            if (hidePanel) {
+                guiPanel.style.display = 'none';
+            } else {
+                guiPanel.style.display = 'block';
+            }
         }
 
         const loader = new THREE.GLTFLoader();
         loader.load('car.glb', (gltf) => {
             carModel = gltf.scene;
-            carModel.scale.set(0.2, 0.2, 0.2); // 建筑师微调：根据模型调整比例
+            carModel.scale.set(0.2, 0.2, 0.2); // 建築師微調：根據模型調整比例
             carModel.visible = false;
             scene.add(carModel);
             updateUI("Toyota Ready", "#00ff00");
@@ -134,10 +151,12 @@
                     carModel.position.z = -palm.z * 5;
                     carModel.rotation.y += 0.03;
                     carModel.visible = true;
-                    updateUI("Toyota on Hand", "#00ff00");
+                    // 小車出現時，隱藏提示面板以獲得更好的 AR 體驗
+                    updateUI("Toyota on Hand", "#00ff00", true); 
                 } else if (carModel) {
                     carModel.visible = false;
-                    updateUI("Searching for Hand...", "#ffffff");
+                    // 小車消失時，重新顯示提示面板
+                    updateUI("Searching for Hand...", "#333", false);
                 }
             }
             renderer.render(scene, camera3D);
