@@ -3,81 +3,119 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Step 2: 3D Layer Test - Fatina</title>
+    <title>Step 3: AI Tracking Test - Fatina</title>
     <style>
         body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
-        /* 相機在底層 */
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
-        /* 3D 容器在頂層 */
         #three_container { position: absolute; width: 100vw; height: 100vh; z-index: 10; pointer-events: none; }
         
         #status { 
             position: fixed; top: 20px; left: 50%; transform: translateX(-50%); 
             background: rgba(255,255,255,0.9); padding: 10px 20px; border-radius: 20px; 
-            z-index: 100; font-weight: bold; color: green;
+            z-index: 100; font-weight: bold; text-align: center; font-size: 14px;
         }
     </style>
 </head>
 <body>
-    <div id="status">Step 2: 3D Engine Loading...</div>
+    <div id="status">Step 3: Initializing AI...</div>
     <video id="webcam" autoplay playsinline></video>
     <div id="three_container"></div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.153.0/three.min.js"></script>
 
-    <script>
+    <script type="module">
+        import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
+
         const status = document.getElementById("status");
         const video = document.getElementById("webcam");
+        let handLandmarker;
+        let lastVideoTime = -1;
+        let cube;
+        let scene, camera3D, renderer;
 
-        // --- 1. 相機啟動 (延續 Step 1 的成功代碼) ---
+        // --- 1. 初始化 3D 場景 ---
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.getElementById('three_container').appendChild(renderer.domElement);
+
+            const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
+            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            cube = new THREE.Mesh(geometry, material);
+            cube.visible = false; // 沒偵測到手時先隱藏
+            scene.add(cube);
+
+            camera3D.position.z = 5;
+            startAI();
+        }
+
+        // --- 2. 啟動 MediaPipe AI ---
+        async function startAI() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+                handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                        delegate: "GPU"
+                    },
+                    runningMode: "VIDEO", numHands: 1
+                });
+                status.innerText = "AI Active! Show your hand";
+                status.style.color = "blue";
+                animate();
+            } catch (err) {
+                status.innerText = "AI Error: " + err.message;
+                status.style.color = "red";
+            }
+        }
+
+        // --- 3. 攝像頭啟動 ---
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment" } 
                 });
                 video.srcObject = stream;
-                initThreeJS(); // 相機成功後啟動 3D
+                video.addEventListener("loadeddata", initThreeJS);
             } catch (err) {
                 status.innerText = "Camera Error: " + err.name;
                 status.style.color = "red";
             }
         }
 
-        // --- 2. Three.js 渲染邏輯 ---
-        function initThreeJS() {
-            const scene = new THREE.Scene();
-            const camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true }); // alpha: true 才能透視看到相機
-            
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            document.getElementById('three_container').appendChild(renderer.domElement);
+        // --- 4. 偵測與動畫循環 ---
+        function animate() {
+            if (lastVideoTime !== video.currentTime) {
+                lastVideoTime = video.currentTime;
+                const results = handLandmarker.detectForVideo(video, performance.now());
 
-            // 創建一個紅色測試小方塊
-            const geometry = new THREE.BoxGeometry(1, 1, 1);
-            const material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            const cube = new THREE.Mesh(geometry, material);
-            scene.add(cube);
-
-            camera3D.position.z = 5;
-
-            function animate() {
-                requestAnimationFrame(animate);
-                // 讓方塊旋轉，證明 3D 引擎正在跑
-                cube.rotation.x += 0.02;
-                cube.rotation.y += 0.02;
-                renderer.render(scene, camera3D);
+                if (results.landmarks && results.landmarks.length > 0) {
+                    const palm = results.landmarks[0][9]; // 取得中指根部坐標
+                    
+                    // 座標映射 (將 0~1 轉換為 3D 空間)
+                    cube.position.x = (palm.x - 0.5) * 7;
+                    cube.position.y = -(palm.y - 0.5) * 12;
+                    cube.position.z = -palm.z * 10;
+                    
+                    cube.rotation.x += 0.05;
+                    cube.rotation.y += 0.05;
+                    cube.visible = true;
+                    status.innerText = "Hand Detected! ✅";
+                    status.style.color = "green";
+                } else {
+                    cube.visible = false;
+                    status.innerText = "Scanning for hand...";
+                    status.style.color = "orange";
+                }
             }
-            
-            animate();
-            status.innerText = "Step 2 Success: 3D Box Active!";
+            renderer.render(scene, camera3D);
+            window.requestAnimationFrame(animate);
         }
 
         window.addEventListener('load', startCamera);
-
-        // 處理螢幕旋轉/縮放
-        window.addEventListener('resize', () => {
-            // 這裡可以加入重置 renderer 大小的邏輯，我們先保持簡單
-        });
     </script>
 </body>
 </html>
