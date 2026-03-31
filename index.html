@@ -1,28 +1,75 @@
-startBtn.addEventListener('click', async () => {
-            if (isStarted) return;
-            alert("Starting AI initialization..."); // 增加彈窗測試
-            logElement.innerText = "Loading AI...";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Toyota AR - For Leo</title>
+    <style>
+        /* 基礎樣式：全屏黑屏背景 */
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', Helvetica, Arial, sans-serif; }
+        
+        /* 攝像頭層 */
+        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
+        
+        /* 3D 渲染層 */
+        #three_container { position: absolute; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
 
-            try {
-                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-                handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                        delegate: "GPU"
-                    },
-                    runningMode: "VIDEO", numHands: 1
-                });
-                
-                // 請求攝像頭
-                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                video.srcObject = stream;
-                video.addEventListener("loadeddata", predictWebcam);
-                
-                isStarted = true;
-                startBtn.style.display = "none";
-                logElement.innerText = "Show your hand!";
-            } catch (err) {
-                alert("Critical Error: " + err.name + " - " + err.message); // 強制顯示錯誤原因
-                logElement.innerText = "Error: " + err.message;
-            }
-        });
+        /* 白色簡約 UI 面板 - 居中佈局 */
+        .info-panel {
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%);
+            z-index: 10; 
+            width: 85%; 
+            max-width: 320px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 28px; 
+            padding: 40px 20px;
+            text-align: center;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            color: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: opacity 0.5s ease, visibility 0.5s;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+
+        .title { font-size: 20px; font-weight: 700; margin-bottom: 12px; line-height: 1.2; color: #000; }
+        .subtitle { font-size: 16px; margin-bottom: 30px; line-height: 1.6; color: #444; }
+        .bold-name { font-weight: 900; color: #000; text-decoration: underline; }
+
+        /* 啟動按鈕 */
+        #start-btn {
+            background: #000; 
+            color: #fff; 
+            border: none;
+            padding: 16px 45px; 
+            border-radius: 50px;
+            font-weight: 700; 
+            cursor: pointer; 
+            font-size: 16px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: all 0.2s ease;
+        }
+        #start-btn:active { transform: scale(0.95); background: #333; }
+
+        /* 狀態文字 */
+        #log { font-size: 11px; margin-top: 25px; color: #999; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+    </style>
+</head>
+<body>
+    <video id="webcam" autoplay playsinline></video>
+    
+    <div id="three_container"></div>
+
+    <div class="info-panel" id="gui-panel">
+        <div class="title">Hi Leo, this is the Toyota Car</div>
+        <div class="subtitle">Open your hand with camera<br>Love aunty <span class="bold-name">Fatina</span></div>
+        <button id="start-btn">Start Experience</button>
+        <div id="log">Checking System...</div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3"></script>
