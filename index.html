@@ -3,31 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - Main Camera Test</title>
+    <title>Toyota AR - Final Stable</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: -apple-system, sans-serif; }
         #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
         #three_container { position: absolute; width: 100vw; height: 100vh; z-index: 3; pointer-events: none; }
         
-        /* 簡約白底黑字提示 */
-        .debug-panel {
-            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
-            z-index: 10; width: 80%; max-width: 300px;
-            background: rgba(255, 255, 255, 0.95); border-radius: 15px;
-            padding: 15px; text-align: center; color: #000;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        /* 居中引導面板 */
+        .overlay {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: 10; width: 280px; padding: 30px;
+            background: #fff; border-radius: 20px; text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
-        .title { font-size: 16px; font-weight: bold; margin-bottom: 5px; }
-        .footer { font-size: 13px; margin-top: 5px; }
-        .bold-name { font-weight: 900; }
-        #status { font-size: 11px; color: #666; margin-top: 10px; text-transform: uppercase; }
+        .title { font-size: 18px; font-weight: bold; margin-bottom: 10px; color: #000; }
+        .msg { font-size: 14px; color: #666; margin-bottom: 20px; line-height: 1.4; }
+        .bold-name { font-weight: 800; color: #000; }
+        
+        button {
+            background: #000; color: #fff; border: none; padding: 12px 30px;
+            border-radius: 25px; font-weight: bold; cursor: pointer; font-size: 15px;
+        }
+        #status-log { font-size: 10px; color: #999; margin-top: 15px; text-transform: uppercase; }
     </style>
 </head>
 <body>
-    <div class="debug-panel">
-        <div class="title">Hi Leo, Toyota is coming!</div>
-        <div class="footer">Love aunty <span class="bold-name">Fatina</span></div>
-        <div id="status">Loading AI System...</div>
+    <div class="overlay" id="start-overlay">
+        <div class="title">Hi Leo, Toyota AR</div>
+        <div class="msg">Tap start to see the car!<br>Love aunty <span class="bold-name">Fatina</span></div>
+        <button id="btn-start">Start Experience</button>
+        <div id="status-log">Waiting for model...</div>
     </div>
 
     <video id="webcam" autoplay playsinline></video>
@@ -40,93 +45,79 @@
     <script type="module">
         import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
-        const status = document.getElementById("status");
+        const log = document.getElementById("status-log");
         const video = document.getElementById("webcam");
-        let handLandmarker;
-        let lastVideoTime = -1;
-        let carModel;
+        const overlay = document.getElementById("start-overlay");
+        let handLandmarker, carModel, isRunning = false;
 
-        // --- 1. Three.js 基礎場景 ---
+        // --- 1. Three.js 初始化 ---
         const scene = new THREE.Scene();
-        const camera3D = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.getElementById('three_container').appendChild(renderer.domElement);
-        
-        scene.add(new THREE.AmbientLight(0xffffff, 2.0));
-        camera3D.position.z = 5;
+        scene.add(new THREE.AmbientLight(0xffffff, 2.5));
+        camera.position.z = 5;
 
-        // --- 2. 加載模型（若失敗則生成方塊） ---
+        // --- 2. 靜默加載模型 ---
         const loader = new THREE.GLTFLoader();
         loader.load('./car.glb', (gltf) => {
             carModel = gltf.scene;
-            carModel.scale.set(0.5, 0.5, 0.5);
+            carModel.scale.set(0.4, 0.4, 0.4);
             carModel.visible = false;
             scene.add(carModel);
-            status.innerText = "Toyota Ready! Show hand";
-        }, undefined, (err) => {
-            // 如果找不到 car.glb，改用紅色方塊測試
-            status.innerText = "Using Test Cube (No car.glb)";
+            log.innerText = "Model Ready";
+        }, undefined, () => {
+            log.innerText = "Using Test Cube";
             const geo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-            const mat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-            carModel = new THREE.Mesh(geo, mat);
+            carModel = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: 0xff0000}));
             carModel.visible = false;
             scene.add(carModel);
         });
 
-        // --- 3. 啟動 AI 與 主攝像頭 ---
-        async function init() {
+        // --- 3. 手動啟動相機與 AI ---
+        document.getElementById("btn-start").onclick = async () => {
+            log.innerText = "Starting Camera...";
             try {
+                // 初始化 Mediapipe
                 const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
                 handLandmarker = await HandLandmarker.createFromOptions(vision, {
-                    baseOptions: {
-                        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
-                        delegate: "GPU"
-                    },
+                    baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, delegate: "GPU" },
                     runningMode: "VIDEO", numHands: 1
                 });
-                
-                // 強制請求後置攝像頭 (environment)
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: { exact: "environment" } } 
-                }).catch(() => {
-                    // 如果某些手機不支援 exact，退回到普通後置
-                    return navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-                });
 
+                // 請求攝像頭
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
                 video.srcObject = stream;
-                video.addEventListener("loadeddata", predictWebcam);
+                
+                video.onloadeddata = () => {
+                    isRunning = true;
+                    overlay.style.display = "none"; // 成功後隱藏面板
+                    animate();
+                };
             } catch (e) {
-                status.innerText = "Error: " + e.message;
+                alert("Camera access failed: " + e.message);
+                log.innerText = "Error: Permission Denied";
             }
-        }
+        };
 
-        async function predictWebcam() {
-            if (lastVideoTime !== video.currentTime) {
-                lastVideoTime = video.currentTime;
+        function animate() {
+            if (isRunning && video.currentTime !== -1) {
                 const results = handLandmarker.detectForVideo(video, performance.now());
-
                 if (results.landmarks && results.landmarks.length > 0 && carModel) {
-                    const palm = results.landmarks[0][9]; // 中指根部
-                    
-                    // 座標轉換
-                    carModel.position.x = (palm.x - 0.5) * 7;
+                    const palm = results.landmarks[0][9];
+                    carModel.position.x = (palm.x - 0.5) * 8;
                     carModel.position.y = -(palm.y - 0.5) * 12;
                     carModel.position.z = -palm.z * 10;
-                    
                     carModel.rotation.y += 0.05;
                     carModel.visible = true;
-                    status.innerText = "Driving on Leo's hand!";
                 } else if (carModel) {
                     carModel.visible = false;
-                    status.innerText = "Scanning for hand...";
                 }
             }
-            renderer.render(scene, camera3D);
-            window.requestAnimationFrame(predictWebcam);
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
         }
-
-        init();
     </script>
 </body>
 </html>
