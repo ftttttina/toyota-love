@@ -3,72 +3,69 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Toyota AR - Hand Tracking</title>
+    <title>Toyota AR - Hand Tracking Fix</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #000; font-family: sans-serif; }
-        /* 摄像头层 */
-        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; }
-        /* 绘图层（画出手指线条） */
+        body { margin: 0; overflow: hidden; background: #000; font-family: Arial, sans-serif; }
+        #webcam { position: absolute; width: 100vw; height: 100vh; object-fit: cover; z-index: 1; transform: scaleX(1); }
         #output_canvas { position: absolute; width: 100vw; height: 100vh; z-index: 2; pointer-events: none; }
-        .status {
-            position: fixed; top: 20px; left: 20px; z-index: 3;
-            color: #00ff00; background: rgba(0,0,0,0.7);
-            padding: 8px 15px; border-radius: 5px; font-size: 14px;
+        .info-panel {
+            position: fixed; top: 10px; left: 10px; z-index: 10;
+            color: #00ff00; background: rgba(0,0,0,0.8);
+            padding: 10px; border-radius: 4px; font-size: 12px; max-width: 80%;
         }
     </style>
 </head>
 <body>
-    <div class="status">System: Initializing Camera...</div>
+    <div class="info-panel" id="status">System: Loading MediaPipe...</div>
     <video id="webcam" autoplay playsinline></video>
     <canvas id="output_canvas"></canvas>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424515/hands.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.4.1637441118/camera_utils.js" crossorigin="anonymous"></script>
 
     <script>
         const videoElement = document.getElementById('webcam');
         const canvasElement = document.getElementById('output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
-        const statusDiv = document.querySelector('.status');
+        const statusDiv = document.getElementById('status');
 
-        // 设置 Canvas 分辨率与窗口一致
-        function resizeCanvas() {
+        function updateStatus(msg) {
+            statusDiv.innerText = "System: " + msg;
+            console.log(msg);
+        }
+
+        // 自动适配屏幕比例
+        function onResize() {
             canvasElement.width = window.innerWidth;
             canvasElement.height = window.innerHeight;
         }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        window.addEventListener('resize', onResize);
+        onResize();
 
         function onResults(results) {
-            // 清除上一帧的笔迹
             canvasCtx.save();
             canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
             
             if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-                statusDiv.innerText = "Status: Hand Detected";
-                statusDiv.style.color = "#00ff00";
-
+                updateStatus("Hand Detected!");
                 for (const landmarks of results.multiHandLandmarks) {
-                    // 画出连接线
-                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 5});
-                    // 画出关键点
-                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 2});
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 4});
+                    drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1, radius: 3});
                 }
             } else {
-                statusDiv.innerText = "Status: Searching for Hand...";
-                statusDiv.style.color = "#ffffff";
+                updateStatus("Searching for hand...");
             }
             canvasCtx.restore();
         }
 
         const hands = new Hands({
-            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1646424515/${file}`
         });
 
         hands.setOptions({
-            maxNumHands: 1,            // 只追踪一只手，节省手机性能
-            modelComplexity: 1,        // 0为快速，1为平衡
+            maxNumHands: 1,
+            modelComplexity: 0, // 降低复杂度以提升手机运行速度
             minDetectionConfidence: 0.5,
             minTrackingConfidence: 0.5
         });
@@ -79,14 +76,15 @@
             onFrame: async () => {
                 await hands.send({image: videoElement});
             },
-            width: 1280,
-            height: 720,
-            facingMode: "environment" // 依然强制使用后置摄像头
+            width: 640,  // 降低检测分辨率提升识别率
+            height: 480
         });
 
-        camera.start().then(() => {
-            statusDiv.innerText = "Status: Camera Ready - Show your hand";
-        });
+        // 尝试启动摄像头
+        camera.start()
+            .then(() => updateStatus("Camera active. Show your hand!"))
+            .catch(err => updateStatus("Error: " + err));
+
     </script>
 </body>
 </html>
